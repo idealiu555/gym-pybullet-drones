@@ -14,7 +14,7 @@ packages = [
 python = "^3.12"
 pillow = "^12.3"
 setuptools = ">=83"
-torch = "^2.13"
+torch = "^2.10"
 numpy = "^2.5"
 scipy = "^1.18"
 transforms3d = "^0.4"
