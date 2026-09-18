@@ -96,6 +96,17 @@ class BaseRLAviary(BaseAviary):
 
     ################################################################################
 
+    def reset(self, seed=None, options=None):
+        """Reset action history and PID state before constructing observations."""
+        self.action_buffer.clear()
+        for _ in range(self.ACTION_BUFFER_SIZE):
+            self.action_buffer.append(np.zeros(self.action_space.shape, dtype=np.float32))
+        for controller in getattr(self, "ctrl", []):
+            controller.reset()
+        return super().reset(seed=seed, options=options)
+
+    ################################################################################
+
     def _addObstacles(self):
         """Add obstacles to the environment.
 

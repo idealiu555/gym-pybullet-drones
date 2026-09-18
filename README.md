@@ -55,7 +55,7 @@ cd gym_pybullet_drones/examples/
 python3 downwash.py
 ```
 
-### Reinforcement learning examples (SB3's PPO)
+### Reinforcement learning examples (PPO and MAPPO)
 
 ```sh
 cd gym_pybullet_drones/examples/
@@ -64,10 +64,43 @@ cd gym_pybullet_drones/examples/
 python learn.py
 LATEST_MODEL=$(ls -t results | head -n 1) && python play.py --model_path "results/${LATEST_MODEL}/best_model.zip"
 
-# multi-agent, task: 2-drone hover at z == 1.2 and 0.7
-python learn.py --multiagent true
-LATEST_MODEL=$(ls -t results | head -n 1) && python play.py --multiagent true --model_path "results/${LATEST_MODEL}/best_model.zip"
+# multi-agent: decentralized actors with a centralized team critic (MAPPO)
+python learn.py --multiagent true --num_drones 2 --total_timesteps 1000000 --gui false --plot false
+LATEST_MODEL=$(ls -t results | head -n 1) && python play.py --multiagent true --model_path "results/${LATEST_MODEL}/best_model.pt"
 ```
+
+MAPPO uses a shared actor that sees only its own kinematics, action history,
+and target displacement. The critic sees all drones' observations during
+training; execution needs only the actor. It uses per-agent clipped policy
+ratios, a shared mean team reward, GAE, clipped value loss, and bounded tanh
+Gaussian actions. Time limits bootstrap from the final observation; failures
+do not. This is a feed-forward implementation of the centralized-training,
+decentralized-execution approach in [MAPPO](https://github.com/marlbenchmark/on-policy).
+
+Multi-drone training defaults to 3D velocity actions through the existing PID
+controller. Use `--act rpm` for direct motor control or `--act one_d_rpm` for
+vertical-only flight. The default targets are the initial positions plus
+`1 / (i + 1)` meters vertically. Custom `(num_drones, 3)` targets can be passed
+as `target_positions` to `learn.run()` or `MultiHoverAviary`.
+
+The dense reward favors early arrival and low speed; a hover bonus requires
+position error <= 5 cm, speed <= 0.1 m/s, angular speed <= 0.2 rad/s, and
+roll/pitch <= 0.1 rad. All drones must meet these conditions continuously for
+one second to count as successful, and must continue hovering until the
+8-second time limit. Altitude below 2 cm, roll/pitch beyond 0.4 rad, or distance
+from the assigned target beyond 3 m ends an episode as failure.
+Multi-agent evaluation records team reward, final success,
+worst final distance, and consecutive final hover time in `evaluations.npz`.
+Single-agent evaluation records episode reward without placeholder hover metrics.
+
+`best_model.pt` and `final_model.pt` include network/optimizer states and the
+environment settings used for replay. The best model is selected by evaluation
+return. `--seed`, `--rollout_steps`, `--batch_size`, `--epochs`, `--eval_freq`, and
+`--device` configure training. MAPPO timesteps count joint simulation steps,
+not individual agent actions. Evaluation uses a separate environment and a
+fixed deterministic episode; repeat training with different seeds to assess
+robustness. Existing multi-drone PPO checkpoints are incompatible with the
+new target-aware observations. Single-drone PPO still uses `.zip` checkpoints.
 
 <img src="gym_pybullet_drones/assets/rl.gif" alt="rl example" width="375"> <img src="gym_pybullet_drones/assets/marl.gif" alt="marl example" width="375">
 
