@@ -56,7 +56,7 @@ class _EvaluationCallback(BaseCallback):
 
 
 def run(multiagent=False, output_folder="results", gui=True, plot=True,
-        colab=False, record_video=False, local=True, num_drones=2,
+        colab=False, record_video=False, local=True,
         total_timesteps=None, act=None, seed=0, eval_freq=10000,
         rollout_steps=512, batch_size=256, epochs=5, device="cpu",
         target_positions=None):
@@ -71,7 +71,7 @@ def run(multiagent=False, output_folder="results", gui=True, plot=True,
     total_timesteps : int, optional
         Joint environment steps. Defaults to 1,000,000 (128 if local=False).
     target_positions : array_like, optional
-        Individual MAPPO targets, shaped (num_drones, 3), in meters.
+        Individual MAPPO targets, shaped (10, 3), in meters.
     """
     total_timesteps = total_timesteps if total_timesteps is not None else (1000000 if local else 128)
     if total_timesteps < 1 or eval_freq < 1:
@@ -82,7 +82,7 @@ def run(multiagent=False, output_folder="results", gui=True, plot=True,
     env_kwargs = dict(obs=ObservationType.KIN, act=action_type)
     env_class = MultiHoverAviary if multiagent else HoverAviary
     if multiagent:
-        env_kwargs.update(num_drones=num_drones, target_positions=target_positions)
+        env_kwargs["target_positions"] = target_positions
     train_env = env_class(**env_kwargs)
     eval_env = None
     previous_threads = torch.get_num_threads()
@@ -92,7 +92,7 @@ def run(multiagent=False, output_folder="results", gui=True, plot=True,
         eval_env = env_class(**env_kwargs)
         metadata = {"act": action_type.value}
         if multiagent:
-            metadata.update(num_drones=num_drones, target_positions=train_env.TARGET_POS.tolist(),
+            metadata.update(target_positions=train_env.TARGET_POS.tolist(),
                             initial_xyzs=train_env.INIT_XYZS.tolist(),
                             ctrl_freq=train_env.CTRL_FREQ, pyb_freq=train_env.PYB_FREQ,
                             episode_len_sec=train_env.EPISODE_LEN_SEC, hold_time=train_env.HOLD_TIME)
@@ -156,7 +156,6 @@ def run(multiagent=False, output_folder="results", gui=True, plot=True,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--multiagent", type=str2bool, default=False)
-    parser.add_argument("--num_drones", type=int, default=2)
     parser.add_argument("--total_timesteps", type=int, default=1000000)
     parser.add_argument("--gui", type=str2bool, default=True)
     parser.add_argument("--plot", type=str2bool, default=True)

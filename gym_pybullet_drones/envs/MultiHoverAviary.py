@@ -5,6 +5,9 @@ from gym_pybullet_drones.envs.BaseRLAviary import BaseRLAviary
 from gym_pybullet_drones.utils.enums import DroneModel, Physics, ActionType, ObservationType
 
 
+NUM_DRONES = 10
+
+
 class MultiHoverAviary(BaseRLAviary):
     """Cooperative flight to individual targets followed by sustained hovering.
 
@@ -14,8 +17,8 @@ class MultiHoverAviary(BaseRLAviary):
     the episode: the policy must keep hovering until the time limit.
     """
 
-    def __init__(self, drone_model=DroneModel.CF2X, num_drones=2,
-                 neighbourhood_radius=np.inf, initial_xyzs=None, initial_rpys=None,
+    def __init__(self, drone_model=DroneModel.CF2X, neighbourhood_radius=np.inf,
+                 initial_xyzs=None, initial_rpys=None,
                  physics=Physics.PYB, pyb_freq=240, ctrl_freq=30, gui=False,
                  record=False, obs=ObservationType.KIN, act=ActionType.RPM,
                  target_positions=None, episode_len_sec=8, hold_time=1.0):
@@ -24,32 +27,32 @@ class MultiHoverAviary(BaseRLAviary):
         Parameters
         ----------
         target_positions : array_like, optional
-            Individual XYZ targets in meters, shaped (num_drones, 3).
+            Individual XYZ targets in meters, shaped (10, 3).
         episode_len_sec : float, optional
             Simulation time limit in seconds.
         hold_time : float, optional
             Required consecutive simultaneous hover duration in seconds.
         """
-        if num_drones < 1 or not 0 < hold_time <= episode_len_sec:
-            raise ValueError("Require num_drones >= 1 and 0 < hold_time <= episode_len_sec")
+        if not 0 < hold_time <= episode_len_sec:
+            raise ValueError("Require 0 < hold_time <= episode_len_sec")
         if target_positions is not None:
             target_positions = np.asarray(target_positions, dtype=float)
-            if (target_positions.shape != (num_drones, 3)
+            if (target_positions.shape != (NUM_DRONES, 3)
                     or not np.isfinite(target_positions).all()
                     or np.any(target_positions[:, 2] <= 0)):
-                raise ValueError("target_positions must be finite (num_drones, 3) with z > 0")
+                raise ValueError("target_positions must be finite (10, 3) with z > 0")
         self.EPISODE_LEN_SEC = episode_len_sec
         self.HOLD_TIME = hold_time
         self._hover_steps = 0
         if initial_xyzs is not None:
             initial_xyzs = np.asarray(initial_xyzs, dtype=float)
-        super().__init__(drone_model=drone_model, num_drones=num_drones,
+        super().__init__(drone_model=drone_model, num_drones=NUM_DRONES,
                          neighbourhood_radius=neighbourhood_radius,
                          initial_xyzs=initial_xyzs, initial_rpys=initial_rpys,
                          physics=physics, pyb_freq=pyb_freq, ctrl_freq=ctrl_freq,
                          gui=gui, record=record, obs=obs, act=act)
         self.TARGET_POS = (self.INIT_XYZS + np.array([
-            [0, 0, 1 / (i + 1)] for i in range(num_drones)
+            [0, 0, 1 / (i + 1)] for i in range(NUM_DRONES)
         ]) if target_positions is None else target_positions.copy())
 
     def _observationSpace(self):

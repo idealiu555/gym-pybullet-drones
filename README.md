@@ -65,7 +65,7 @@ python learn.py
 LATEST_MODEL=$(ls -t results | head -n 1) && python play.py --model_path "results/${LATEST_MODEL}/best_model.zip"
 
 # multi-agent: decentralized actors with a centralized team critic (MAPPO)
-python learn.py --multiagent true --num_drones 2 --total_timesteps 1000000 --gui false --plot false
+python learn.py --multiagent true --total_timesteps 1000000 --gui false --plot false
 LATEST_MODEL=$(ls -t results | head -n 1) && python play.py --multiagent true --model_path "results/${LATEST_MODEL}/best_model.pt"
 ```
 
@@ -77,11 +77,11 @@ Gaussian actions. Time limits bootstrap from the final observation; failures
 do not. This is a feed-forward implementation of the centralized-training,
 decentralized-execution approach in [MAPPO](https://github.com/marlbenchmark/on-policy).
 
-Multi-drone training defaults to 3D velocity actions through the existing PID
-controller. Use `--act rpm` for direct motor control or `--act one_d_rpm` for
-vertical-only flight. The default targets are the initial positions plus
-`1 / (i + 1)` meters vertically. Custom `(num_drones, 3)` targets can be passed
-as `target_positions` to `learn.run()` or `MultiHoverAviary`.
+The MAPPO task always simulates 10 drones and defaults to 3D velocity actions
+through the existing PID controller. Use `--act rpm` for direct motor control
+or `--act one_d_rpm` for vertical-only flight. The default targets are the
+initial positions plus `1 / (i + 1)` meters vertically. Custom `(10, 3)` targets
+can be passed as `target_positions` to `learn.run()` or `MultiHoverAviary`.
 
 The dense reward favors early arrival and low speed; a hover bonus requires
 position error <= 5 cm, speed <= 0.1 m/s, angular speed <= 0.2 rad/s, and

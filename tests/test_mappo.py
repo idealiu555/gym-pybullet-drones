@@ -207,17 +207,19 @@ def test_multihover_goal_reset_and_time_limit():
     from gym_pybullet_drones.envs.MultiHoverAviary import MultiHoverAviary
     from gym_pybullet_drones.utils.enums import ActionType
 
-    env = MultiHoverAviary(num_drones=3, act=ActionType.VEL,
+    env = MultiHoverAviary(act=ActionType.VEL,
                           episode_len_sec=0.1, hold_time=0.1)
     try:
         obs, _ = env.reset(seed=0)
+        assert env.NUM_DRONES == 10
+        assert env.action_space.shape[0] == 10
         assert env.observation_space.contains(obs)
         np.testing.assert_allclose(obs[:, -3:], env.TARGET_POS - env.pos)
         for step in range(3):
-            _, _, terminated, truncated, _ = env.step(np.zeros((3, 4), dtype=np.float32))
+            _, _, terminated, truncated, _ = env.step(np.zeros((10, 4), dtype=np.float32))
             assert not terminated
             assert truncated == (step == 2)
-        env.step(np.full((3, 4), 0.1, dtype=np.float32))
+        env.step(np.full((10, 4), 0.1, dtype=np.float32))
         reset_obs, info = env.reset(seed=0)
         np.testing.assert_array_equal(obs, reset_obs)
         assert info["hover_time"] == 0
@@ -226,23 +228,30 @@ def test_multihover_goal_reset_and_time_limit():
         env.close()
 
 
+def test_multihover_requires_ten_targets():
+    from gym_pybullet_drones.envs.MultiHoverAviary import MultiHoverAviary
+
+    with pytest.raises(ValueError, match=r"\(10, 3\)"):
+        MultiHoverAviary(target_positions=np.ones((2, 3)))
+
+
 def test_hover_requires_all_drones_and_continues_after_success():
     import pybullet as p
     from gym_pybullet_drones.envs.MultiHoverAviary import MultiHoverAviary
     from gym_pybullet_drones.utils.enums import ActionType
 
-    initial = np.array([[0., 0., 1.], [0.5, 0., 1.]])
+    initial = np.column_stack([np.arange(10) * 0.5, np.zeros(10), np.ones(10)])
     env = MultiHoverAviary(initial_xyzs=initial, target_positions=initial,
                           act=ActionType.ONE_D_RPM, hold_time=0.1)
     try:
         env.reset()
         for step in range(4):
-            _, reward, terminated, truncated, info = env.step(np.zeros((2, 1)))
+            _, reward, terminated, truncated, info = env.step(np.zeros((10, 1)))
             assert not terminated and not truncated
             assert info["is_success"] == (step >= 2)
-        assert reward == pytest.approx(3.)
+        assert reward == pytest.approx(15.)
         p.resetBaseVelocity(env.DRONE_IDS[1], linearVelocity=[0, 0, 1], physicsClientId=env.CLIENT)
-        _, _, _, _, info = env.step(np.zeros((2, 1)))
+        _, _, _, _, info = env.step(np.zeros((10, 1)))
         assert not info["is_success"] and info["hover_time"] == 0
         p.resetBasePositionAndOrientation(env.DRONE_IDS[1], [0.5, 0, 0.01],
                                          [0, 0, 0, 1], physicsClientId=env.CLIENT)
@@ -258,7 +267,7 @@ def test_mappo_training_and_playback():
     from gym_pybullet_drones.examples.learn import run
     from gym_pybullet_drones.examples.play import play
 
-    folder = Path(run(multiagent=True, num_drones=3, gui=False, plot=False,
+    folder = Path(run(multiagent=True, gui=False, plot=False,
                       output_folder="tmp", total_timesteps=17, rollout_steps=8,
                       batch_size=4, epochs=1, eval_freq=8))
     assert (folder / "best_model.pt").is_file()
@@ -267,4 +276,4 @@ def test_mappo_training_and_playback():
         assert data["timesteps"].tolist() == [8, 16, 17]
         assert np.isfinite(data["reward"]).all()
     result = play(str(folder / "final_model.pt"), multiagent=True, gui=False, plot=False)
-    assert result["distance"].shape == (3,)
+    assert result["distance"].shape == (10,)
