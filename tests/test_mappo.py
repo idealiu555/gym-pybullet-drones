@@ -1,6 +1,8 @@
 """Regression tests for CTDE, timeout semantics and the training entry point."""
 
 from pathlib import Path
+import sys
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -9,6 +11,25 @@ from gymnasium import spaces
 
 from gym_pybullet_drones.learning import MAPPO, MAPPOConfig
 from gym_pybullet_drones.learning.mappo import compute_gae
+
+
+@pytest.fixture(autouse=True)
+def fake_swanlab(monkeypatch):
+    run = SimpleNamespace(logs=[], finished=False)
+    run.log = lambda data, step: run.logs.append((data, step))
+
+    def finish(**kwargs):
+        run.finished = True
+        run.finish_kwargs = kwargs
+
+    def init(**kwargs):
+        run.kwargs = kwargs
+        return run
+
+    run.finish = finish
+    module = SimpleNamespace(init=init)
+    monkeypatch.setitem(sys.modules, "swanlab", module)
+    return run
 
 
 @pytest.fixture
@@ -193,7 +214,7 @@ def test_single_agent_evaluation_omits_unavailable_metrics():
         env.close()
 
 
-def test_ppo_final_evaluation_follows_update(monkeypatch):
+def test_ppo_final_evaluation_follows_update(monkeypatch, fake_swanlab):
     from gym_pybullet_drones.examples import learn
 
     def evaluate_updates(model, env, seed):
@@ -211,6 +232,52 @@ def test_ppo_final_evaluation_follows_update(monkeypatch):
     final = learn.PPO.load(folder / "final_model.zip")
     for a, b in zip(best.policy.parameters(), final.policy.parameters()):
         torch.testing.assert_close(a, b)
+    assert fake_swanlab.finished
+    assert fake_swanlab.kwargs["project"] == "gym-pybullet-drones"
+    assert any("eval/reward" in data for data, _ in fake_swanlab.logs)
+    assert [(step, data["train/n_updates"]) for data, step in fake_swanlab.logs
+            if "train/n_updates" in data] == [(8, 1), (16, 2)]
+
+
+def test_zero_eval_skips_evaluation_and_best_checkpoint(monkeypatch, fake_swanlab):
+    from gym_pybullet_drones.examples import learn
+
+    monkeypatch.setattr(learn, "evaluate", lambda *args: pytest.fail("evaluation was called"))
+    folder = Path(learn.run(gui=False, plot=False, output_folder="tmp",
+                            total_timesteps=8, rollout_steps=8, batch_size=4,
+                            epochs=1, eval_freq=0))
+    assert (folder / "final_model.zip").is_file()
+    assert not (folder / "best_model.zip").exists()
+    assert not (folder / "evaluations.npz").exists()
+    assert fake_swanlab.finished
+    assert not any(name.startswith("eval/") for data, _ in fake_swanlab.logs for name in data)
+    assert any("train/loss" in data and step == 8 for data, step in fake_swanlab.logs)
+    assert fake_swanlab.finish_kwargs == {"state": "success", "error": None}
+
+
+def test_training_failure_marks_swanlab_crashed(monkeypatch, fake_swanlab):
+    from gym_pybullet_drones.examples import learn
+
+    def fail_training(*args, **kwargs):
+        raise RuntimeError("training failed")
+
+    monkeypatch.setattr(learn.PPO, "learn", fail_training)
+    with pytest.raises(RuntimeError, match="training failed"):
+        learn.run(gui=False, plot=False, output_folder="tmp", total_timesteps=8,
+                  rollout_steps=8, batch_size=4, epochs=1, eval_freq=0)
+    assert fake_swanlab.finished
+    assert fake_swanlab.finish_kwargs == {"state": "crashed", "error": "training failed"}
+
+
+def test_training_in_exception_handler_finishes_successfully(fake_swanlab):
+    from gym_pybullet_drones.examples import learn
+
+    try:
+        raise RuntimeError("earlier caller error")
+    except RuntimeError:
+        learn.run(gui=False, plot=False, output_folder="tmp", total_timesteps=8,
+                  rollout_steps=8, batch_size=4, epochs=1, eval_freq=0)
+    assert fake_swanlab.finish_kwargs == {"state": "success", "error": None}
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda:1"])
@@ -303,7 +370,7 @@ def test_hover_requires_all_drones_and_continues_after_success():
         env.close()
 
 
-def test_mappo_training_and_playback():
+def test_mappo_training_and_playback(fake_swanlab):
     from gym_pybullet_drones.examples.learn import run
     from gym_pybullet_drones.examples.play import play
 
@@ -315,5 +382,6 @@ def test_mappo_training_and_playback():
     with np.load(folder / "evaluations.npz") as data:
         assert data["timesteps"].tolist() == [8, 16, 17]
         assert np.isfinite(data["reward"]).all()
+    assert any("train/rollout_reward" in data for data, _ in fake_swanlab.logs)
     result = play(str(folder / "final_model.pt"), multiagent=True, gui=False, plot=False)
     assert result["distance"].shape == (10,)

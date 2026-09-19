@@ -27,14 +27,13 @@ python -m gym_pybullet_drones.examples.learn --multiagent true --actor_type qwen
 
 采集仅支持 VEL 候选 PD 专家。数据记录实际执行动作前的观测，按 episode 拆分验证集，保留失败轨迹；随机初始位置和目标范围写入数据 manifest。SFT 是 `MSE(tanh(mu), action)`，不是文本回答训练；较小的监督误差不等于闭环成功。
 
-从基座直接进行 MAPPO，或恢复完整 MAPPO 训练：
+从基座直接进行 MAPPO：
 
 ```powershell
-python -m gym_pybullet_drones.examples.learn --multiagent true --actor_type qwen --model_path D:/models/Qwen3.5-0.8B --backbone_dtype bfloat16 --device cuda --update_microbatch_steps 1 --gui false --plot false
-python -m gym_pybullet_drones.examples.learn --multiagent true --resume results/<run>/final_model --device cuda --gui false --plot false
+bash gym_pybullet_drones/examples/train_mappo_qwen.sh
 ```
 
-`actor_init` 只恢复 actor，创建新 critic/优化器；`resume` 恢复 MAPPO 参数、优化器、计数和 RNG，两者互斥。恢复从新 episode 开始，不恢复 PyBullet 中途状态。resume 恢复原环境配置，禁止覆盖 `act` 和目标。SFT 的 `actor_init` 同样只是初始化，不恢复 SFT 优化器。
+训练前在脚本顶部修改模型路径、显卡、步数和微批参数，并使用 `RUN_NAME` 标记实验；输出保存到 `results/<RUN_NAME>/save-时间戳/`。将 `EVAL_FREQ` 设为 `0` 可完全跳过评估，此时只保存 `final_model`，不生成 `best_model` 和 `evaluations.npz`。训练会自动将训练损失和评估结果上传到 SwanLab；先执行 `swanlab login`，并在脚本中设置 `SWANLAB_PROJECT`、可选的 `SWANLAB_WORKSPACE` 与默认 `online` 的 `SWANLAB_MODE`。`actor_init` 只恢复 actor，创建新 critic/优化器；SFT 的 `actor_init` 同样只是初始化，不恢复 SFT 优化器。
 
 旧 MLP `.pt` 检查点仍可加载，但未保存 RNG 的旧文件无法恢复原随机序列。
 
@@ -46,10 +45,10 @@ SFT 使用 `actor_init` 时，骨干、prompt 和观测语义沿用检查点；�
 
 `backbone_dtype=bfloat16` 指骨干计算精度，不是可训练参数的存储精度：末两层保留 FP32 主权重，前向通过 `torch.func.functional_call` 使用可微 BF16 临时副本。SFT/MAPPO 的 Adam 直接更新 FP32 参数，动量及保存权重也是 FP32，不需要额外主权重同步或两套优化器。冻结骨干仍保持原加载精度，动作头/动作分布保持 FP32。旧 BF16 权重可载入 FP32 参数继续训练，但此前因舍入已丢失的更新无法恢复；真实 GPU 算子兼容性仍待验证。
 
-默认 MLP 用法不变：
+MLP MAPPO 也使用脚本：
 
 ```powershell
-python -m gym_pybullet_drones.examples.learn --multiagent true --actor_type mlp --gui false --plot false
+bash gym_pybullet_drones/examples/train_mappo_mlp.sh
 ```
 
 ## 推理与文件

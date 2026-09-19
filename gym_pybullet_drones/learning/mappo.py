@@ -175,6 +175,7 @@ class MAPPO:
                 value = next_values[t]
         advantages, returns = compute_gae(rewards, values, next_values, terminated,
                                          truncated, self.config.gamma, self.config.gae_lambda)
+        self._last_rollout_reward = float(rewards.mean())
         batch = tuple(self._tensor(x) for x in
                       (observations, actions, log_probs, values, advantages, returns))
         if tokens is not None:
@@ -245,6 +246,7 @@ class MAPPO:
             steps = min(self.config.rollout_steps, remaining)
             obs, batch = self._collect_rollout(env, obs, steps)
             metrics = self._update(batch)
+            metrics["rollout_reward"] = self._last_rollout_reward
             self.num_timesteps += steps
             remaining -= steps
             if callback is not None:
