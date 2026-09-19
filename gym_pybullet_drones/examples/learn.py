@@ -3,6 +3,7 @@
 import argparse
 from dataclasses import asdict
 from datetime import datetime
+from os import getpid
 from pathlib import Path
 
 import numpy as np
@@ -64,6 +65,45 @@ class _TrainingCallback(BaseCallback):
         metrics = {name: value for name, value in self.model.logger.name_to_value.items()
                    if name.startswith("train/")}
         self.report(self.model, metrics)
+
+
+class _GpuProcessMetrics:
+    """Read memory and SM utilization for this training process only."""
+
+    def __init__(self, device):
+        self.nvml = None
+        if device.type == "cuda":
+            import pynvml
+
+            try:
+                pynvml.nvmlInit()
+                index = device.index if device.index is not None else torch.cuda.current_device()
+                self.handle = pynvml.nvmlDeviceGetHandleByIndex(index)
+            except pynvml.NVMLError:
+                return
+            self.nvml = pynvml
+            self.pid = getpid()
+            self.last_seen_time = 0
+
+    def read(self):
+        if self.nvml is None:
+            return {}
+        metrics = {}
+        try:
+            processes = self.nvml.nvmlDeviceGetComputeRunningProcesses(self.handle)
+            process = next((item for item in processes if item.pid == self.pid), None)
+            if process is not None and process.usedGpuMemory is not None:
+                metrics["system/gpu_process_memory_mib"] = process.usedGpuMemory / 2**20
+            samples = self.nvml.nvmlDeviceGetProcessUtilization(self.handle, self.last_seen_time)
+        except self.nvml.NVMLError:
+            self.nvml = None
+            return metrics
+        if samples:
+            self.last_seen_time = max(sample.timeStamp for sample in samples)
+        sample = next((item for item in reversed(samples) if item.pid == self.pid), None)
+        if sample is not None:
+            metrics["system/gpu_process_sm_utilization"] = sample.smUtil
+        return metrics
 
 
 def run(multiagent=False, output_folder="results", gui=True, plot=True,
@@ -152,6 +192,7 @@ def run(multiagent=False, output_folder="results", gui=True, plot=True,
         else:
             model = PPO("MlpPolicy", train_env, n_steps=rollout_steps,
                         batch_size=batch_size, n_epochs=epochs, seed=seed, device=device)
+        gpu_metrics = _GpuProcessMetrics(model.device)
         import swanlab
 
         training_config = dict(multiagent=multiagent, actor_type=actor_type,
@@ -182,9 +223,10 @@ def run(multiagent=False, output_folder="results", gui=True, plot=True,
                 model.save(path)
 
         def report(model, metrics):
-            if metrics:
-                payload = {(name if "/" in name else f"train/{name}"): float(value)
-                           for name, value in metrics.items()}
+            payload = {(name if "/" in name else f"train/{name}"): float(value)
+                       for name, value in metrics.items()}
+            payload.update(gpu_metrics.read())
+            if payload:
                 swanlab_run.log(payload, step=model.num_timesteps)
             if eval_freq and model.num_timesteps - last_eval >= eval_freq:
                 record_evaluation(model, metrics)

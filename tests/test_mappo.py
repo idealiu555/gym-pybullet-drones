@@ -1,7 +1,8 @@
 """Regression tests for CTDE, timeout semantics and the training entry point."""
 
-from pathlib import Path
+import os
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -30,6 +31,66 @@ def fake_swanlab(monkeypatch):
     module = SimpleNamespace(init=init)
     monkeypatch.setitem(sys.modules, "swanlab", module)
     return run
+
+
+def fake_nvml(**overrides):
+    functions = {
+        "nvmlInit": lambda: None,
+        "nvmlDeviceGetHandleByIndex": lambda index: index,
+        "nvmlDeviceGetComputeRunningProcesses": lambda handle: [],
+        "nvmlDeviceGetProcessUtilization": lambda handle, timestamp: [],
+    }
+    functions.update(overrides)
+    return SimpleNamespace(NVMLError=RuntimeError, **functions)
+
+
+def test_gpu_metrics_select_current_process(monkeypatch):
+    from gym_pybullet_drones.examples import learn
+
+    pid = os.getpid()
+    other = SimpleNamespace(pid=pid + 1, usedGpuMemory=900 * 2**20)
+    current = SimpleNamespace(pid=pid, usedGpuMemory=320 * 2**20)
+    old_sample = SimpleNamespace(pid=pid, smUtil=17, timeStamp=10)
+    current_sample = SimpleNamespace(pid=pid, smUtil=63, timeStamp=20)
+    seen_times = []
+
+    def process_utilization(handle, timestamp):
+        seen_times.append(timestamp)
+        return [old_sample, current_sample] if timestamp == 0 else []
+
+    nvml = fake_nvml(
+        nvmlDeviceGetComputeRunningProcesses=lambda handle: [other, current],
+        nvmlDeviceGetProcessUtilization=process_utilization,
+    )
+    monkeypatch.setitem(sys.modules, "pynvml", nvml)
+    gpu_metrics = learn._GpuProcessMetrics(torch.device("cuda:1"))
+    metrics = gpu_metrics.read()
+    assert metrics == {"system/gpu_process_memory_mib": 320,
+                       "system/gpu_process_sm_utilization": 63}
+    gpu_metrics.read()
+    assert seen_times == [0, 20]
+
+
+def test_gpu_metrics_ignore_nvml_errors(monkeypatch):
+    from gym_pybullet_drones.examples import learn
+
+    def fail_init():
+        raise RuntimeError
+
+    nvml = fake_nvml(nvmlInit=fail_init)
+    monkeypatch.setitem(sys.modules, "pynvml", nvml)
+    assert learn._GpuProcessMetrics(torch.device("cuda")).read() == {}
+
+
+def test_gpu_metrics_ignore_read_errors(monkeypatch):
+    from gym_pybullet_drones.examples import learn
+
+    def fail_read(handle):
+        raise RuntimeError
+
+    nvml = fake_nvml(nvmlDeviceGetComputeRunningProcesses=fail_read)
+    monkeypatch.setitem(sys.modules, "pynvml", nvml)
+    assert learn._GpuProcessMetrics(torch.device("cuda")).read() == {}
 
 
 @pytest.fixture

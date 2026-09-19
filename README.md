@@ -84,7 +84,7 @@ MAPPO 任务始终仿真 10 架无人机，默认通过现有 PID 控制器使�
 
 稠密奖励鼓励更早到达和较低速度；悬停奖励要求位置误差不超过 5 cm、速度不超过 0.1 m/s、角速度不超过 0.2 rad/s、横滚/俯仰角不超过 0.1 rad。全部无人机必须连续一秒满足这些条件才算成功，并持续悬停至 8 秒时间限制结束。高度低于 2 cm、横滚/俯仰超过 0.4 rad，或距目标超过 3 m 都会使回合因失败而终止。启用评估时，多智能体会在 `evaluations.npz` 中记录团队奖励、最终是否成功、最差最终距离和连续最终悬停时间。单智能体评估仅记录回合奖励，不填充悬停指标。
 
-`best_model.pt` 和 `final_model.pt` 包含网络、优化器状态以及回放所需的环境设置。最优模型按评估回报选择。请在 `train_mappo_mlp.sh` 或 `train_mappo_qwen.sh` 中选择 actor、设备（如 `cuda:0`、`cuda:1` 或 `cpu`）和训练超参数，并用 `RUN_NAME` 标记实验。输出路径为仓库根目录下的 `results/<RUN_NAME>/save-时间戳/`。将 `EVAL_FREQ` 设为 `0` 可跳过评估；此时只保存 `final_model`，不生成 `best_model` 和 `evaluations.npz`。训练会自动向 SwanLab 上传训练损失和评估指标；在脚本中通过 `SWANLAB_PROJECT`、`SWANLAB_WORKSPACE` 和 `SWANLAB_MODE` 设置目标项目、工作空间与上传模式。MAPPO 的时间步计数单位是联合仿真步，而非单个智能体动作。评估使用独立环境和固定的确定性回合；应使用不同随机种子重复训练以评估鲁棒性。已有的多无人机 PPO 检查点与新的目标感知观测不兼容；单无人机 PPO 仍使用 `.zip` 检查点。
+`best_model.pt` 和 `final_model.pt` 包含网络、优化器状态以及回放所需的环境设置。最优模型按评估回报选择。请在 `train_mappo_mlp.sh` 或 `train_mappo_qwen.sh` 中选择 actor、设备（如 `cuda:0`、`cuda:1` 或 `cpu`）和训练超参数，并用 `RUN_NAME` 标记实验。输出路径为仓库根目录下的 `results/<RUN_NAME>/save-时间戳/`。将 `EVAL_FREQ` 设为 `0` 可跳过评估；此时只保存 `final_model`，不生成 `best_model` 和 `evaluations.npz`。训练会自动向 SwanLab 上传训练损失、评估指标，以及当前训练进程的显存占用和 SM 利用率；在脚本中通过 `SWANLAB_PROJECT`、`SWANLAB_WORKSPACE` 和 `SWANLAB_MODE` 设置目标项目、工作空间与上传模式。MAPPO 的时间步计数单位是联合仿真步，而非单个智能体动作。评估使用独立环境和固定的确定性回合；应使用不同随机种子重复训练以评估鲁棒性。已有的多无人机 PPO 检查点与新的目标感知观测不兼容；单无人机 PPO 仍使用 `.zip` 检查点。
 
 <img src="gym_pybullet_drones/assets/rl.gif" alt="强化学习示例" width="375"> <img src="gym_pybullet_drones/assets/marl.gif" alt="多智能体强化学习示例" width="375">
 
