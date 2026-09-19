@@ -142,6 +142,13 @@ If you wish, please cite our [IROS 2021 paper](https://arxiv.org/abs/2103.02142)
 }
 ```
 
+## Optional Qwen shared actor
+
+MAPPO retains its default MLP actor and optionally supports a shared Qwen3.5-0.8B
+continuous-action actor, local behavior cloning, and batched inference without
+ms-swift. See [setup, commands and validation limits](docs/qwen_actor_usage.md).
+Only tiny CPU substitutes have been tested; real-model/GPU training is not yet validated.
+
 ## References
 
 - Erwin Coumans and Yunfei Bai (2023) [*PyBullet Quickstart Guide*](https://docs.google.com/document/d/10sXEhzFRSnvFcl3XxNGhnD4N2SedqwdAvK3dsihxVUA/edit?tab=t.0#heading=h.2ye70wns7io3)

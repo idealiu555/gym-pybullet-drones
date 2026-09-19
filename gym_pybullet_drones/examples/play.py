@@ -2,6 +2,7 @@
 
 import argparse
 import time
+from pathlib import Path
 
 import numpy as np
 from stable_baselines3 import PPO
@@ -16,17 +17,29 @@ from gym_pybullet_drones.utils.Logger import Logger
 
 def play(model_path="results/best_model.zip", multiagent=False, gui=True,
          plot=True, record_video=False, act=ActionType.ONE_D_RPM,
-         output_folder="results", colab=False):
+         output_folder="results", colab=False, device="cpu", base_model_path=None):
     """Replay one episode; MAPPO checkpoints restore their environment settings."""
     if multiagent:
-        model, metadata = MAPPO.load(model_path)
+        if Path(model_path).is_dir():
+            from gym_pybullet_drones.learning.actor_checkpoint import ActorPolicy, load_actor
+            actor, log_std, manifest, _ = load_actor(model_path, device, base_model_path)
+            if manifest["stage"] != "mappo":
+                raise ValueError("Playback requires a MAPPO checkpoint with environment metadata")
+            model = ActorPolicy(actor, log_std)
+            metadata = dict(manifest["metadata"])
+        else:
+            model, metadata = MAPPO.load(model_path, device, resume=False)
         metadata["act"] = ActionType(metadata["act"])
         env = MultiHoverAviary(gui=gui, record=record_video, **metadata)
     else:
-        model = PPO.load(model_path)
+        model = PPO.load(model_path, device=device)
         env = HoverAviary(gui=gui, record=record_video, obs=ObservationType.KIN,
                          act=ActionType(act))
     try:
+        if multiagent and Path(model_path).is_dir():
+            from gym_pybullet_drones.learning.observation_prompt import ObservationSpec
+            if actor.spec != ObservationSpec.from_env(env) or manifest["num_agents"] != env.NUM_DRONES:
+                raise ValueError("Playback environment does not match the checkpoint")
         logger = Logger(logging_freq_hz=env.CTRL_FREQ, num_drones=env.NUM_DRONES,
                         output_folder=output_folder, colab=colab) if plot else None
         obs, _ = env.reset(seed=42)
@@ -62,4 +75,6 @@ if __name__ == "__main__":
     parser.add_argument("--plot", type=str2bool, default=True)
     parser.add_argument("--record_video", type=str2bool, default=False)
     parser.add_argument("--act", choices=[a.value for a in ActionType], default="one_d_rpm")
+    parser.add_argument("--device", default="cpu")
+    parser.add_argument("--base_model_path")
     play(**vars(parser.parse_args()))

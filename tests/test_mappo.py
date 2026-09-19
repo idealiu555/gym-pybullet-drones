@@ -107,6 +107,42 @@ def test_update_and_checkpoint(model, tmp_path):
     assert metadata == {"act": "vel"}
 
 
+def test_resume_restores_sampling_and_minibatch_rng(model, tmp_path):
+    model.rng.permutation(10)
+    torch.rand(7)
+    path = tmp_path / "resume.pt"
+    model.save(path)
+    expected_actions, _ = model.predict(np.zeros((2, 3)), deterministic=False)
+    expected_indices = model.rng.permutation(10)
+
+    restored, _ = MAPPO.load(path)
+    actions, _ = restored.predict(np.zeros((2, 3)), deterministic=False)
+    np.testing.assert_array_equal(actions, expected_actions)
+    np.testing.assert_array_equal(restored.rng.permutation(10), expected_indices)
+
+
+def test_cuda_rng_follows_policy_when_resuming_on_another_gpu(model, tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    cuda_state = torch.tensor([1, 2, 3], dtype=torch.uint8)
+    get_state = Mock(return_value=cuda_state)
+    set_state = Mock()
+    monkeypatch.setattr(torch.cuda, "get_rng_state", get_state)
+    monkeypatch.setattr(torch.cuda, "set_rng_state", set_state)
+    # Keep tensors on CPU and substitute only CUDA RNG calls.
+    model.device = torch.device("cuda:1")
+    path = tmp_path / "cuda.pt"
+    model.save(path)
+    get_state.assert_called_once_with(torch.device("cuda:1"))
+
+    state = torch.load(path, map_location="cpu", weights_only=True)
+    model.device = torch.device("cuda:0")
+    model._restore_training_state(state)
+    set_state.assert_called_once()
+    torch.testing.assert_close(set_state.call_args.args[0], cuda_state)
+    assert set_state.call_args.args[1] == torch.device("cuda:0")
+
+
 def test_single_step_update_keeps_policy_gradient(model):
     model.config.entropy_coef = 0
     obs = torch.ones((1, 2, 3))
@@ -177,8 +213,10 @@ def test_ppo_final_evaluation_follows_update(monkeypatch):
         torch.testing.assert_close(a, b)
 
 
-def test_single_agent_playback_reaches_environment_boundary(monkeypatch):
+@pytest.mark.parametrize("device", ["cpu", "cuda:1"])
+def test_single_agent_playback_reaches_environment_boundary(monkeypatch, device):
     from types import SimpleNamespace
+    from unittest.mock import Mock
 
     from gym_pybullet_drones.envs.HoverAviary import HoverAviary
     from gym_pybullet_drones.examples import play
@@ -197,9 +235,11 @@ def test_single_agent_playback_reaches_environment_boundary(monkeypatch):
             return transition
 
     policy = SimpleNamespace(predict=lambda obs, deterministic: (np.zeros((1, 1)), None))
-    monkeypatch.setattr(play.PPO, "load", lambda path: policy)
+    load = Mock(return_value=policy)
+    monkeypatch.setattr(play.PPO, "load", load)
     monkeypatch.setattr(play, "HoverAviary", TrackedHover)
-    play.play(gui=False, plot=False)
+    play.play(gui=False, plot=False, device=device)
+    load.assert_called_once_with("results/best_model.zip", device=device)
     assert instances[0].ended
 
 

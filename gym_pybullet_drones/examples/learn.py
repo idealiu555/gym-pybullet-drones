@@ -12,6 +12,8 @@ from stable_baselines3.common.callbacks import BaseCallback
 from gym_pybullet_drones.envs.HoverAviary import HoverAviary
 from gym_pybullet_drones.envs.MultiHoverAviary import MultiHoverAviary
 from gym_pybullet_drones.learning import MAPPO, MAPPOConfig
+from gym_pybullet_drones.learning.actors import ActorConfig
+from gym_pybullet_drones.learning.observation_prompt import ObservationSpec
 from gym_pybullet_drones.utils.enums import ObservationType, ActionType
 from gym_pybullet_drones.utils.utils import str2bool
 
@@ -59,7 +61,8 @@ def run(multiagent=False, output_folder="results", gui=True, plot=True,
         colab=False, record_video=False, local=True,
         total_timesteps=None, act=None, seed=0, eval_freq=10000,
         rollout_steps=512, batch_size=256, epochs=5, device="cpu",
-        target_positions=None):
+        target_positions=None, actor_type="mlp", model_path=None, actor_init=None,
+        resume=None, update_microbatch_steps=None, backbone_dtype="float32"):
     """Train and save best/final models; return the run directory.
 
     Parameters
@@ -74,6 +77,15 @@ def run(multiagent=False, output_folder="results", gui=True, plot=True,
         Individual MAPPO targets, shaped (10, 3), in meters.
     """
     total_timesteps = total_timesteps if total_timesteps is not None else (1000000 if local else 128)
+    if actor_init and resume:
+        raise ValueError("actor_init and resume are mutually exclusive")
+    if not multiagent and (actor_type != "mlp" or model_path or actor_init or resume
+                           or update_microbatch_steps is not None or backbone_dtype != "float32"):
+        raise ValueError("Qwen and MAPPO options require multiagent=True")
+    if actor_init and actor_type != "qwen":
+        raise ValueError("actor_init requires actor_type=qwen")
+    if actor_type == "mlp" and not resume and (model_path or backbone_dtype != "float32"):
+        raise ValueError("Model path and dtype apply only to Qwen")
     if total_timesteps < 1 or eval_freq < 1:
         raise ValueError("total_timesteps and eval_freq must be positive")
     action_type = ActionType(act) if act is not None else (ActionType.VEL if multiagent else ActionType.ONE_D_RPM)
@@ -83,12 +95,20 @@ def run(multiagent=False, output_folder="results", gui=True, plot=True,
     env_class = MultiHoverAviary if multiagent else HoverAviary
     if multiagent:
         env_kwargs["target_positions"] = target_positions
+    restored_model = None
+    if resume:
+        if target_positions is not None or act is not None:
+            raise ValueError("Resume restores environment settings; do not override act or targets")
+        restored_model, saved_metadata = MAPPO.load(resume, device, model_path=model_path)
+        env_kwargs = dict(saved_metadata, obs=ObservationType.KIN)
+        action_type = env_kwargs["act"] = ActionType(env_kwargs["act"])
     train_env = env_class(**env_kwargs)
     eval_env = None
     previous_threads = torch.get_num_threads()
     try:
         # Avoid thread-pool overhead on these small fully connected networks.
-        torch.set_num_threads(1)
+        if actor_type == "mlp" and not (restored_model and restored_model.actor_config.actor_type == "qwen"):
+            torch.set_num_threads(1)
         eval_env = env_class(**env_kwargs)
         metadata = {"act": action_type.value}
         if multiagent:
@@ -96,19 +116,36 @@ def run(multiagent=False, output_folder="results", gui=True, plot=True,
                             initial_xyzs=train_env.INIT_XYZS.tolist(),
                             ctrl_freq=train_env.CTRL_FREQ, pyb_freq=train_env.PYB_FREQ,
                             episode_len_sec=train_env.EPISODE_LEN_SEC, hold_time=train_env.HOLD_TIME)
-            model = MAPPO(train_env.observation_space, train_env.action_space,
-                          MAPPOConfig(rollout_steps=rollout_steps, batch_size=batch_size,
-                                      epochs=epochs, seed=seed), device=device)
+            if restored_model is not None:
+                model = restored_model
+            else:
+                spec = ObservationSpec.from_env(train_env) if actor_type == "qwen" else None
+                actor_config = ActorConfig(actor_type=actor_type, model_path=model_path,
+                                           backbone_dtype=backbone_dtype)
+                actor = None
+                if actor_init:
+                    from gym_pybullet_drones.learning.actor_checkpoint import load_actor
+                    actor, initial_std, _, _ = load_actor(actor_init, device, model_path, spec)
+                    actor_config = actor.config
+                model = MAPPO(train_env.observation_space, train_env.action_space,
+                              MAPPOConfig(rollout_steps=rollout_steps, batch_size=batch_size,
+                                          epochs=epochs, seed=seed,
+                                          update_microbatch_steps=update_microbatch_steps),
+                              device=device, actor_config=actor_config,
+                              observation_spec=spec, actor=actor)
+                if actor_init:
+                    with torch.no_grad():
+                        model.log_std.copy_(initial_std)
         else:
             model = PPO("MlpPolicy", train_env, n_steps=rollout_steps,
                         batch_size=batch_size, n_epochs=epochs, seed=seed, device=device)
-        extension = "pt" if multiagent else "zip"
+        extension = ("" if model.actor_config.actor_type == "qwen" else ".pt") if multiagent else ".zip"
         records = []
         best_reward = -np.inf
         last_eval = 0
 
         def save(model, name):
-            path = folder / f"{name}.{extension}"
+            path = folder / f"{name}{extension}"
             if multiagent:
                 model.save(path, metadata=metadata)
             else:
@@ -147,9 +184,14 @@ def run(multiagent=False, output_folder="results", gui=True, plot=True,
     if gui or plot or record_video:
         from gym_pybullet_drones.examples.play import play
 
-        play(str(folder / f"best_model.{extension}"), multiagent=multiagent,
+        # Playback reloads the best checkpoint; release the training actor and Adam first.
+        used_cuda = model.device.type == "cuda"
+        model = restored_model = actor = None
+        if used_cuda:
+            torch.cuda.empty_cache()
+        play(str(folder / f"best_model{extension}"), multiagent=multiagent,
              gui=gui, plot=plot, record_video=record_video, act=action_type,
-             output_folder=output_folder, colab=colab)
+             output_folder=output_folder, colab=colab, device=device)
     return str(folder)
 
 
@@ -169,4 +211,10 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--actor_type", choices=["mlp", "qwen"], default="mlp")
+    parser.add_argument("--model_path")
+    parser.add_argument("--actor_init")
+    parser.add_argument("--resume")
+    parser.add_argument("--update_microbatch_steps", type=int)
+    parser.add_argument("--backbone_dtype", choices=["float32", "bfloat16"], default="float32")
     run(**vars(parser.parse_args()))

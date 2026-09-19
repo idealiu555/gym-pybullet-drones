@@ -1,0 +1,19 @@
+{
+  "dataset": "results/qwen_data",
+  "output": "results/qwen_sft",
+  "device": "cuda",
+  "seed": 0,
+  "epochs": 3,
+  "batch_size": 32,
+  "microbatch_size": 10,
+  "validation_fraction": 0.2,
+  "max_grad_norm": 0.5,
+  "actor": {
+    "actor_type": "qwen",
+    "model_path": "D:/models/Qwen3.5-0.8B",
+    "backbone_dtype": "bfloat16",
+    "attention_backend": "eager",
+    "actor_backbone_lr": 0.00001,
+    "actor_head_lr": 0.0001
+  }
+}
