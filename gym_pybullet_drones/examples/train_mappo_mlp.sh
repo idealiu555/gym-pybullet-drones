@@ -3,9 +3,9 @@ set -e
 
 # Edit these values before starting training.
 DEVICE="cuda:0"
-TOTAL_TIMESTEPS=10000
+TOTAL_TIMESTEPS=100000
 ROLLOUT_STEPS=512
-BATCH_SIZE=256
+BATCH_SIZE=512
 EPOCHS=5
 # 设为 0 时跳过评估，只保存 final_model。
 EVAL_FREQ=0

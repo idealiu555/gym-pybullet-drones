@@ -4,13 +4,13 @@ set -e
 # Edit these values before starting training.
 MODEL_PATH="/mnt/nfs/jcliu/wp/models/Qwen--Qwen3.5-0.8B/snapshots/master"
 DEVICE="cuda:0"
-TOTAL_TIMESTEPS=10000
+TOTAL_TIMESTEPS=100000
 ROLLOUT_STEPS=512
-BATCH_SIZE=256
+BATCH_SIZE=512
 EPOCHS=5
 # 设为 0 时跳过评估，只保存 final_model。
 EVAL_FREQ=0
-UPDATE_MICROBATCH_STEPS=12
+UPDATE_MICROBATCH_STEPS=24
 BACKBONE_DTYPE="bfloat16"
 RUN_NAME="mappo_qwen3.5_0.8b"
 OUTPUT_FOLDER="results/$RUN_NAME"
