@@ -25,6 +25,7 @@ class MAPPOConfig:
     epochs: int = 5
     hidden_size: int = 128
     learning_rate: float = 3e-4
+    actor_learning_rate: float = 3e-4
     gamma: float = 0.99
     gae_lambda: float = 0.95
     clip_range: float = 0.2
@@ -41,8 +42,9 @@ class MAPPOConfig:
             raise ValueError("Rollout, batch, epoch and hidden sizes must be positive")
         if not 0 <= self.gamma <= 1 or not 0 <= self.gae_lambda <= 1:
             raise ValueError("gamma and gae_lambda must be in [0, 1]")
-        if self.learning_rate <= 0 or self.clip_range <= 0 or self.max_grad_norm <= 0:
-            raise ValueError("Learning rate, clipping and gradient norm must be positive")
+        if (self.learning_rate <= 0 or self.actor_learning_rate <= 0
+                or self.clip_range <= 0 or self.max_grad_norm <= 0):
+            raise ValueError("Learning rates, clipping and gradient norm must be positive")
 
 
 def compute_gae(rewards, values, next_values, terminated, truncated, gamma, gae_lambda):
@@ -110,7 +112,11 @@ class MAPPO:
             parameters[1]["params"].append(self.log_std)
             parameters.append(dict(params=list(self.critic.parameters()), lr=self.config.learning_rate))
         else:
-            parameters = list(self.actor.parameters()) + list(self.critic.parameters()) + [self.log_std]
+            parameters = [
+                dict(params=list(self.actor.parameters()) + [self.log_std],
+                     lr=self.config.actor_learning_rate),
+                dict(params=list(self.critic.parameters()), lr=self.config.learning_rate),
+            ]
         self.optimizer = torch.optim.Adam(parameters, lr=self.config.learning_rate, eps=1e-5)
         self.num_timesteps = 0
         self.metadata = {}

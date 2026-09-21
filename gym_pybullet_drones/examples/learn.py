@@ -112,6 +112,8 @@ def run(multiagent=False, output_folder="results", gui=True, plot=True,
         rollout_steps=512, batch_size=256, epochs=5, device="cpu",
         target_positions=None, actor_type="mlp", model_path=None, actor_init=None,
         resume=None, update_microbatch_steps=None, backbone_dtype="float32",
+        actor_backbone_lr=1e-5, actor_head_lr=1e-4, actor_learning_rate=3e-4,
+        critic_learning_rate=3e-4,
         swanlab_project="gym-pybullet-drones", swanlab_workspace=None,
         swanlab_mode="online"):
     """Train and save best/final models; return the run directory.
@@ -174,7 +176,9 @@ def run(multiagent=False, output_folder="results", gui=True, plot=True,
             else:
                 spec = ObservationSpec.from_env(train_env) if actor_type == "qwen" else None
                 actor_config = ActorConfig(actor_type=actor_type, model_path=model_path,
-                                           backbone_dtype=backbone_dtype)
+                                           backbone_dtype=backbone_dtype,
+                                           actor_backbone_lr=actor_backbone_lr,
+                                           actor_head_lr=actor_head_lr)
                 actor = None
                 if actor_init:
                     from gym_pybullet_drones.learning.actor_checkpoint import load_actor
@@ -183,6 +187,8 @@ def run(multiagent=False, output_folder="results", gui=True, plot=True,
                 model = MAPPO(train_env.observation_space, train_env.action_space,
                               MAPPOConfig(rollout_steps=rollout_steps, batch_size=batch_size,
                                           epochs=epochs, seed=seed,
+                                          actor_learning_rate=actor_learning_rate,
+                                          learning_rate=critic_learning_rate,
                                           update_microbatch_steps=update_microbatch_steps),
                               device=device, actor_config=actor_config,
                               observation_spec=spec, actor=actor)
@@ -302,6 +308,10 @@ if __name__ == "__main__":
     parser.add_argument("--resume")
     parser.add_argument("--update_microbatch_steps", type=int)
     parser.add_argument("--backbone_dtype", choices=["float32", "bfloat16"], default="float32")
+    parser.add_argument("--actor_backbone_lr", type=float, default=1e-5)
+    parser.add_argument("--actor_head_lr", type=float, default=1e-4)
+    parser.add_argument("--actor_learning_rate", type=float, default=3e-4)
+    parser.add_argument("--critic_learning_rate", type=float, default=3e-4)
     parser.add_argument("--swanlab_project", default="gym-pybullet-drones")
     parser.add_argument("--swanlab_workspace")
     parser.add_argument("--swanlab_mode", choices=["online", "local", "offline", "disabled"], default="online")

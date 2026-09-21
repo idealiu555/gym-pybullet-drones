@@ -7,6 +7,8 @@ TOTAL_TIMESTEPS=100000
 ROLLOUT_STEPS=512
 BATCH_SIZE=512
 EPOCHS=5
+ACTOR_LEARNING_RATE=1e-4
+CRITIC_LEARNING_RATE=3e-4
 # 设为 0 时跳过评估，只保存 final_model。
 EVAL_FREQ=0
 RUN_NAME="mappo_mlp"
@@ -25,6 +27,8 @@ python -m gym_pybullet_drones.examples.learn \
   --rollout_steps "$ROLLOUT_STEPS" \
   --batch_size "$BATCH_SIZE" \
   --epochs "$EPOCHS" \
+  --actor_learning_rate "$ACTOR_LEARNING_RATE" \
+  --critic_learning_rate "$CRITIC_LEARNING_RATE" \
   --eval_freq "$EVAL_FREQ" \
   --output_folder "$OUTPUT_FOLDER" \
   --swanlab_project "$SWANLAB_PROJECT" \

@@ -12,6 +12,8 @@ EPOCHS=5
 EVAL_FREQ=0
 UPDATE_MICROBATCH_STEPS=24
 BACKBONE_DTYPE="bfloat16"
+ACTOR_LEARNING_RATE=1e-4
+CRITIC_LEARNING_RATE=3e-4
 RUN_NAME="mappo_qwen3.5_0.8b"
 OUTPUT_FOLDER="results/$RUN_NAME"
 SWANLAB_PROJECT="gym-pybullet-drones"
@@ -32,6 +34,9 @@ python -m gym_pybullet_drones.examples.learn \
   --eval_freq "$EVAL_FREQ" \
   --update_microbatch_steps "$UPDATE_MICROBATCH_STEPS" \
   --backbone_dtype "$BACKBONE_DTYPE" \
+  --actor_backbone_lr "$ACTOR_LEARNING_RATE" \
+  --actor_head_lr "$ACTOR_LEARNING_RATE" \
+  --critic_learning_rate "$CRITIC_LEARNING_RATE" \
   --output_folder "$OUTPUT_FOLDER" \
   --swanlab_project "$SWANLAB_PROJECT" \
   --swanlab_workspace "$SWANLAB_WORKSPACE" \
